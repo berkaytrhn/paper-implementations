@@ -1,0 +1,24 @@
+data:
+  train_validation_set_directory: "./data/train"
+  test_set_directory: "./data/test"
+  train_set_length: 0.9
+  validation_set_length: 0.1
+
+train:
+  device: "cuda"
+  learning_rate: 0.0001 # not all experimented values, chosen one specific
+  epochs: 10
+  batch_size: 16
+
+logging:
+  experiment:
+    directory: "experiments"
+    sub_directory: "Experiment 1"
+    model_name: "LeNet5"
+  
+model: 
+  save_directory: "models"
+  name: "LeNet5_1"
+
+
+
