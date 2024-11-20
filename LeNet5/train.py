@@ -34,11 +34,10 @@ def main(args: Namespace):
 if __name__ == "__main__":    
     parser = argparse.ArgumentParser(
         prog='LeNet5 Train',
-        description='LeNet5 Training Process',
-        epilog='Text at the bottom of help')
+        description='LeNet5 Training Process')
     
     
-    parser.add_argument("-c", "--cfg", default="./config.yml", required=False, help="Config Yaml path need to be provided!")
+    parser.add_argument("-c", "--cfg", default="./config.yml", required=False)
     
     args = parser.parse_args()
     main(args)
