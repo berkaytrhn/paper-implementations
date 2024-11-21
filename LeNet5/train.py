@@ -126,7 +126,16 @@ class Train:
                 self.logging_cfg.sub_directory,
                 self.logging_cfg.model_name
         )
-)
+    )
+        
+    def save_model(self):
+        torch.save(
+            self.model, 
+            os.path.join(
+                self.model_cfg.save_directory, 
+                f"{self.model_cfg.name}_{self.train_cfg.epochs}.pth"
+            )
+        )
     
     def train(self):
         train_dataloader_length = len(self.train_dataloader)
@@ -287,6 +296,7 @@ def main(args: Namespace):
     trainer.build_model()
     trainer.train()
     trainer.test()
+    trainer.save_model()
     
 
 
