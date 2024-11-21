@@ -11,7 +11,7 @@ class ConfigurationClass:
 
 @dataclass
 class TrainConfiguration(ConfigurationClass):
-    """ Train hyperparameters interface like structure """
+    """ Train hyperparameters dto"""
     device: str
     learning_rate: float
     epochs: int
@@ -23,7 +23,7 @@ class TrainConfiguration(ConfigurationClass):
         
 @dataclass    
 class DatasetConfiguration(ConfigurationClass):
-    """ Dataset Configuration Interface like structure """
+    """ Dataset Configuration dto"""
     train_set: str
     test_set: str
     train_set_length: int
@@ -34,7 +34,7 @@ class DatasetConfiguration(ConfigurationClass):
 
 @dataclass    
 class LoggingConfiguration(ConfigurationClass):
-    """ Logging Configuration Interface like Structure """
+    """ Logging Configuration dto"""
     directory: str 
     sub_directory: str
     model_name: str
@@ -44,7 +44,7 @@ class LoggingConfiguration(ConfigurationClass):
     
 @dataclass    
 class ModelSaveConfiguration(ConfigurationClass):
-    """ Model Sacing Configuration Interface like structure"""
+    """ Model Sacing Configuration dto"""
     save_directory: str
     name: str
     
