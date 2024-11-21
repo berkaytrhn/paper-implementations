@@ -6,12 +6,11 @@ data:
 
 train:
   device: "cuda"
-  learning_rate: 0.0001 # not all experimented values, chosen one specific
+  learning_rate: 0.0001 # not all experimented values, chosen one specific, 0.001 is way better
   epochs: 10
   batch_size: 16
 
 logging:
-  experiment:
     directory: "experiments"
     sub_directory: "Experiment 1"
     model_name: "LeNet5"
