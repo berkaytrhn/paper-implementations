@@ -1,0 +1,26 @@
+data:
+  train_validation_set_directory: "../MNIST/train"
+  test_set_directory: "../MNIST/test"
+  train_set_length: 0.9
+  validation_set_length: 0.1
+
+train:
+  device: "cuda"
+  noise_dimension: 64
+  image_channel: 1
+  learning_rate: 0.001 
+  epochs: 10
+  batch_size: 16
+  print_every: 100
+
+logging:
+    directory: "experiments"
+    sub_directory: "Experiment 1"
+    model_name: "DCGAN"
+  
+model: 
+  save_directory: "models"
+  name: "DCGAN_1"
+
+
+
