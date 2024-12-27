@@ -1,17 +1,17 @@
-
-from config import Config
-from dto import TrainConfiguration, DatasetConfiguration, LoggingConfiguration, ModelSaveConfiguration
-
-import torch
-from torchvision import transforms
-from torchvision.datasets import MNIST
-from torch.utils.data import DataLoader, random_split
-from model import Generator, Discriminator
-from torch.optim import Adam
-from tqdm import tqdm
+import argparse
 import os
 
-import argparse
+import torch
+from torch.optim import Adam
+from torch.utils.data import DataLoader, random_split
+from torchvision import transforms
+from torchvision.datasets import MNIST
+from tqdm import tqdm
+
+from config import Config
+from dto import DatasetConfiguration, LoggingConfiguration, ModelSaveConfiguration, TrainConfiguration
+from model import Discriminator, Generator
+from utils import show_tensor_images, save_tensor_images
 
 class Train:
     
@@ -141,7 +141,7 @@ class Train:
             batch_size = real_images.shape[0]
 
             #  reshape from (batch_size, channel, height, width) to (batch_size, channel*height*width)
-            real_images = real_images.reshape(batch_size, -1).to(self.device)
+            real_images = real_images.to(self.device)
             
             # Discriminator Part 
             # zero grad before gradient calculations
@@ -175,7 +175,7 @@ class Train:
             # zero grad before gradient calculations
             self.gen_optimizer.zero_grad()
             # generate new noise for generator
-            noise_new = self._get_noise(batch_size, self.noise_dimension, self.device)
+            noise_new = self._get_noise()
             # generate new fake images for generator step
             fake_images_new = self.gen(noise_new)
             # calculating generator loss using discriminator output
@@ -196,6 +196,8 @@ class Train:
                 print(f"Epoch {epoch}, step {cur_step}: Generator loss: {mean_generator_loss}, discriminator loss: {mean_discriminator_loss}")
                 # show_tensor_images(fake_images)
                 # show_tensor_images(real_images)
+                save_tensor_images(fake_images, f"./{self.model_cfg.results}/generated_{epoch}_{cur_step}.png")
+                
                 mean_generator_loss = 0
                 mean_discriminator_loss = 0
             cur_step += 1
@@ -210,8 +212,8 @@ class Train:
             mean_generator_loss += _mean_generator_loss 
             mean_discriminator_loss += _mean_discriminator_loss
             
-                
-              
+    # TODO: Implement the validation and test process
+    # TODO: Implement logging and metric calculation    
               
                 
 def main(args: argparse.Namespace):
@@ -228,8 +230,8 @@ def main(args: argparse.Namespace):
     trainer.disc = trainer.disc.apply(trainer.weights_init)
     
     trainer.train()
-    trainer.save_model(trainer.gen, trainer.train_cfg.epochs, "./models", "dcgan_model_gen")
-    trainer.save_model(trainer.disc, trainer.train_cfg.epochs, "./models", "dcgan_model_disc")
+    trainer.save_model(trainer.gen, "./models", "dcgan_model_gen")
+    trainer.save_model(trainer.disc, "./models", "dcgan_model_disc")
     
     
 

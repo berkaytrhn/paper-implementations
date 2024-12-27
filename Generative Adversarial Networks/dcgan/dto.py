@@ -48,6 +48,7 @@ class LoggingConfiguration(ConfigurationClass):
 @dataclass    
 class ModelSaveConfiguration(ConfigurationClass):
     """ Model Sacing Configuration dto"""
+    results: str
     save_directory: str
     name: str
     

@@ -30,6 +30,7 @@ MANIFEST
 **/MNIST
 **/*.pth
 **/*.npy
+**/.vscode/
 
 **/data/
 
