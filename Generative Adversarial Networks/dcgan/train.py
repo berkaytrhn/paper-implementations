@@ -12,8 +12,12 @@ from config import Config
 from dto import DatasetConfiguration, LoggingConfiguration, ModelSaveConfiguration, TrainConfiguration
 from model import Discriminator, Generator
 from utils import show_tensor_images, save_tensor_images
+from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
 
 class Train:
+    
+    summary_logger: SummaryWriter=None
     
     def __init__(self, config: Config):
         cfg = config.config
@@ -98,6 +102,16 @@ class Train:
         if isinstance(m, torch.nn.BatchNorm2d):
             torch.nn.init.normal_(m.weight, 0.0, 0.02)
             torch.nn.init.constant_(m.bias, 0)
+            
+    def configure_logging(self):
+        self.summary_logger = SummaryWriter(
+            os.path.join(
+                self.logging_cfg.directory,
+                datetime.now().strftime("%d.%m.%Y"),
+                self.logging_cfg.sub_directory,
+                self.logging_cfg.model_name
+            )
+        )
     
 
     def _calculate_generator_loss(self, discriminator, fake_images):
@@ -133,8 +147,10 @@ class Train:
     
     def _train_step(self, epoch: int):
         
-        mean_generator_loss = 0
-        mean_discriminator_loss = 0
+        dataset_length:int = len(self.train_loader)
+        
+        _generator_loss = 0
+        _discriminator_loss = 0
         cur_step = 0
         for real_images, _ in tqdm(self.train_loader):
             # get batch size
@@ -156,7 +172,7 @@ class Train:
                 real_images
             )
             # Keep track of the average discriminator loss
-            mean_discriminator_loss += discriminator_loss.item() / self.train_cfg.print_every
+            _discriminator_loss += discriminator_loss.item()
             
             # calculate discriminator gradients according to both fake and real images together 
             """
@@ -170,7 +186,6 @@ class Train:
             self.disc_optimizer.step()
             
 
-            
             # Generator Part
             # zero grad before gradient calculations
             self.gen_optimizer.zero_grad()
@@ -189,31 +204,40 @@ class Train:
             self.gen_optimizer.step()
 
             # Keep track of the average generator loss
-            mean_generator_loss += generator_loss.item() / self.train_cfg.print_every
+            _generator_loss += generator_loss.item()
 
-            ## Visualization code ##
-            if cur_step % self.train_cfg.print_every == 0 and cur_step > 0:
-                print(f"Epoch {epoch}, step {cur_step}: Generator loss: {mean_generator_loss}, discriminator loss: {mean_discriminator_loss}")
-                # show_tensor_images(fake_images)
-                # show_tensor_images(real_images)
+
+            if (self.train_cfg.show_and_save_by) and (cur_step % self.train_cfg.show_and_save_by == 0) and (cur_step > 0):
+                show_tensor_images(fake_images)
                 save_tensor_images(fake_images, f"./{self.model_cfg.results}/generated_{epoch}_{cur_step}.png")
-                
-                mean_generator_loss = 0
-                mean_discriminator_loss = 0
+            
             cur_step += 1
-        return mean_generator_loss, mean_discriminator_loss
+        
+        _generator_loss /= dataset_length
+        _discriminator_loss /= dataset_length    
+        
+        return _generator_loss, _discriminator_loss
     
     def train(self):
-        mean_generator_loss = 0
-        mean_discriminator_loss = 0
         for epoch in range(self.train_cfg.epochs):
-            # Dataloader returns the batches
-            _mean_generator_loss, _mean_discriminator_loss = self._train_step(epoch)
-            mean_generator_loss += _mean_generator_loss 
-            mean_discriminator_loss += _mean_discriminator_loss
             
-    # TODO: Implement the validation and test process
-    # TODO: Implement logging and metric calculation    
+            # Dataloader returns the batches
+            _train_generator_loss, _train_discriminator_loss = self._train_step(epoch)
+            
+            print(f"Epoch {epoch}, Generator loss: {_train_generator_loss}, discriminator loss: {_train_discriminator_loss}")
+            
+            # SummaryWriter for losses
+            self.summary_logger.add_scalars(
+                main_tag="Losses",
+                tag_scalar_dict={
+                    "train/generator_loss": _train_generator_loss,
+                    "train/discriminator_loss": _train_discriminator_loss
+                },
+                global_step=epoch
+            )
+            
+            
+    # TODO: Implement the validation and test process(Another paper implementation: FID)
               
                 
 def main(args: argparse.Namespace):
@@ -225,6 +249,7 @@ def main(args: argparse.Namespace):
     trainer.load_dataset()
     trainer.configure_data_loaders()
     trainer.build_model()
+    trainer.configure_logging()
     
     trainer.gen = trainer.gen.apply(trainer.weights_init)
     trainer.disc = trainer.disc.apply(trainer.weights_init)
@@ -243,7 +268,7 @@ if __name__ == "__main__":
         description='DCGAN Training Process')
     
     
-    parser.add_argument("-c", "--cfg", default="./config.yml", required=False)
+    parser.add_argument("-c", "--cfg", default="./train.yml", required=False)
     
     args = parser.parse_args()
     main(args)

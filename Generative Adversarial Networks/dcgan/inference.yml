@@ -1,0 +1,6 @@
+parameters:
+  output_dir: "inferences"
+  model: ./models/dcgan_model_gen_50.pth
+  noise_dimension: 64
+  device: cuda
+  number_of_images: 5

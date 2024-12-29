@@ -18,7 +18,7 @@ class TrainConfiguration(ConfigurationClass):
     learning_rate: float
     epochs: int
     batch_size: int
-    print_every: int
+    show_and_save_by: int
     
     def __init__(self, cfg: dict) -> None:
         super().__init__(cfg)
@@ -51,6 +51,19 @@ class ModelSaveConfiguration(ConfigurationClass):
     results: str
     save_directory: str
     name: str
+    
+    def __init__(self, cfg: dict) -> None:
+        super().__init__(cfg)
+        
+        
+@dataclass    
+class InferenceConfiguration(ConfigurationClass):
+    """ Generator Model Inference Configuration dto"""
+    output_dir: str
+    model: str
+    noise_dimension: int
+    device: str
+    number_of_images: int
     
     def __init__(self, cfg: dict) -> None:
         super().__init__(cfg)
