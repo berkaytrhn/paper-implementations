@@ -1,120 +1,173 @@
-from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 from torchvision.datasets import MNIST
 import torch
 from tqdm import tqdm
 
-
-
+from torch.utils.tensorboard import SummaryWriter
+from config import Config
+from dto import DatasetConfiguration, LoggingConfiguration, ModelSaveConfiguration, TrainConfiguration
+import os
+from datetime import datetime
 
 from model import Generator, Discriminator
-from utils import get_image_dimension, get_noise, show_tensor_images, save_model, save_losses
+from utils import show_tensor_images, save_tensor_images
+import argparse
 
 
-def calculate_generator_loss(discriminator, fake_images, criterion):
-    # calculate discriminator prediction for generated fake images
-    pred_fake = discriminator(fake_images)
-    # calculate generator loss according to discriminator pred for new fake images
-    """
-    Our y_true value for loss calculation is a bit trivial since as in generator side, 
-    our aim is to generate images that discriminator will classify as real ones so our 
-    ground_truth values are all ones.
-    """
-    generator_loss = criterion(pred_fake, torch.ones_like(pred_fake))
-    return generator_loss
-
-def calculate_discriminator_loss(discriminator: nn.Module, fake_images, real_images, criterion, device):
-    pred_fake = discriminator(fake_images)
-    # they are fake, so y_true should be all zeros and same shape with pred_fake
-    loss_fake = criterion(pred_fake, torch.zeros_like(pred_fake))
+class Train:
     
-    pred_real = discriminator(real_images)
-    # they are real, so y_true should be all ones and same shape with pred_real
-    loss_real = criterion(pred_real, torch.ones_like(pred_real))
+    summary_logger: SummaryWriter = None 
     
-    # return average of them
-    return (loss_real + loss_fake) / 2
+    def __init__(self, config: Config):
+        cfg = config.config
+        self.data_cfg = DatasetConfiguration(cfg["data"])
+        self.train_cfg = TrainConfiguration(cfg["train"])
+        self.logging_cfg = LoggingConfiguration(cfg["logging"])
+        self.model_cfg = ModelSaveConfiguration(cfg["model"])
 
 
-def train():
+    def set_device(self) -> None:
+        if torch.cuda.is_available() and self.train_cfg.device == "cuda":
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu") 
+        
 
-    # Data
+    def load_dataset(self) -> None:
+        composed_transforms = transforms.Compose([
+            transforms.ToTensor(), # performs scaling by default for image datasets between range(0-1)
+        ])
+        
+        train_val_set = MNIST(
+            self.data_cfg.train_set, 
+            train=True, 
+            transform=composed_transforms, 
+            download=True
+        )
+        
+        
+        # split train-val into train set and validation set
+        self.train_set, self.validation_set = random_split(
+            dataset=train_val_set, 
+            lengths=[
+                self.data_cfg.train_set_length, 
+                self.data_cfg.test_set_length
+            ]
+        )
+        
+        self.test_set = MNIST(
+            self.data_cfg.test_set, 
+            train=False, 
+            transform=composed_transforms, 
+            download=True
+        )
+        
+    def configure_data_loaders(self) -> None:
+        self.train_loader = DataLoader(
+            self.train_set, 
+            batch_size=self.train_cfg.batch_size, 
+            shuffle=True
+        )
+        
+        self.validation_loader = DataLoader(
+            self.validation_set, 
+            batch_size=self.train_cfg.batch_size, 
+            shuffle=True
+        )
+        
+        self.test_loader = DataLoader(
+            self.test_set, 
+            batch_size=self.train_cfg.batch_size, 
+            shuffle=True
+        )
+        
+    def build_model(self):
+        # Adam optimizer beta values(hard coded for now)
+        beta_1 = 0.5 
+        beta_2 = 0.999
+        self.gen = Generator(noise_dim=self.train_cfg.noise_dimension).to(self.device)
+        self.gen_optimizer = torch.optim.Adam(self.gen.parameters(), lr=self.train_cfg.learning_rate, betas=(beta_1, beta_2))
 
-    composed = transforms.Compose([
-        transforms.ToTensor()
-    ])
+        # image channel as 1 for MNIST
+        self.disc = Discriminator().to(self.device)
+        self.disc_optimizer = torch.optim.Adam(self.disc.parameters(), lr=self.train_cfg.learning_rate, betas=(beta_1, beta_2))
+        
+        # set loss
+        self.criterion = torch.nn.BCEWithLogitsLoss()
 
+    def configure_logging(self):
+        self.summary_logger = SummaryWriter(
+            os.path.join(
+                self.logging_cfg.directory,
+                datetime.now().strftime("%d.%m.%Y"),
+                self.logging_cfg.sub_directory,
+                self.logging_cfg.model_name
+            )
+        )
 
-    dataset = MNIST("../", transform=composed, download=True)
+    def _calculate_generator_loss(self, discriminator, fake_images):
+        # calculate discriminator prediction for generated fake images
+        pred_fake = discriminator(fake_images)
+        # calculate generator loss according to discriminator pred for new fake images
+        """
+        Our y_true value for loss calculation is a bit trivial since as in generator side, 
+        our aim is to generate images that discriminator will classify as real ones so our 
+        ground_truth values are all ones.
+        """
+        generator_loss = self.criterion(pred_fake, torch.ones_like(pred_fake))
+        return generator_loss
 
+    def _calculate_discriminator_loss(self, discriminator, fake_images, real_images):
+        pred_fake = discriminator(fake_images)
+        # they are fake, so y_true should be all zeros and same shape with pred_fake
+        loss_fake = self.criterion(pred_fake, torch.zeros_like(pred_fake))
+        
+        pred_real = discriminator(real_images)
+        # they are real, so y_true should be all ones and same shape with pred_real
+        loss_real = self.criterion(pred_real, torch.ones_like(pred_real))
+        
+        # return average of them
+        return (loss_real + loss_fake) / 2
 
-    # Hyper Parameters
+    def _get_noise(self):
+        # create normally distributed noise data for generator
+        return torch.randn(self.train_cfg.batch_size, self.train_cfg.noise_dimension, device=self.device)
 
-    criterion = nn.BCEWithLogitsLoss()
-    n_epochs = 200
-    noise_dim = 64
-    print_every = 5
-    batch_size = 128
-    lr = 0.00001
-    save_model_every = 20 # epochs
-    model_base_path = "./models"
-
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=True
-    )
-
-    device = "cuda"
-
+    def save_model(self, model:torch.nn.Module, base_path: str, name: str):
+        torch.save(model, os.path.join(base_path, f"{name}_{self.train_cfg.epochs}.pth"))
     
 
-    # calculate image dim dynamically
-
-    image_dimension = get_image_dimension(dataset)
-
-    gen = Generator(
-        noise_dim=noise_dim,
-        image_dim=image_dimension
-    ).to(device)
-
-
-    # 3072 for cifar-10
-    discriminator = Discriminator(image_dim=image_dimension).to(device)
-
-
-    gen_opt = torch.optim.Adam(gen.parameters(), lr=lr)
-    disc_opt = torch.optim.Adam(discriminator.parameters(), lr=lr)
-    
-    
-    # Training Loop
-    debug_print = False
-    gen_losses = []
-    disc_losses = []
-
-
-    for epoch in range(n_epochs):
-        # Epoch Losses 
-        disc_loss, gen_loss = 0, 0
-        for real_images, _ in tqdm(dataloader):
+    def _train_step(self, epoch: int):
+        
+        dataset_length:int = len(self.train_loader)
+        
+        _generator_loss = 0
+        _discriminator_loss = 0
+        cur_step = 0
+        for real_images, _ in tqdm(self.train_loader):
             # get batch size
             batch_size = real_images.shape[0]
-        
+
             #  reshape from (batch_size, channel, height, width) to (batch_size, channel*height*width)
-            real_images = real_images.reshape(batch_size, -1).to(device)
-            # real_images = real_images.view(batch_size, -1).to(device)
+            real_images = real_images.reshape(batch_size, -1).to(self.device)
             
             
             # Discriminator Part 
             # zero grad before gradient calculations
-            disc_opt.zero_grad()
+            self.disc_optimizer.zero_grad()
             # get random noise data
-            noise = get_noise(batch_size, noise_dim, device)
-            # TODO: code works but throws gen not callable!
-            fake_images = gen(noise).detach()
+            noise = self._get_noise()
+            fake_images = self.gen(noise).detach()
             # calculating discriminator loss
-            discriminator_loss = calculate_discriminator_loss(discriminator, fake_images, real_images, criterion, device)
+            discriminator_loss = self._calculate_discriminator_loss(
+                self.disc, 
+                fake_images, 
+                real_images
+            )
+            # Keep track of the average discriminator loss
+            _discriminator_loss += discriminator_loss.item()
+            
             # calculate discriminator gradients according to both fake and real images together 
             """
             We have detached generator output which removed it from computational graph
@@ -124,68 +177,87 @@ def train():
             """
             discriminator_loss.backward(retain_graph=True)
             # updating the parameters of discriminator
-            disc_opt.step()
+            self.disc_optimizer.step()
             
-            
+
             # Generator Part
             # zero grad before gradient calculations
-            gen_opt.zero_grad()
+            self.gen_optimizer.zero_grad()
             # generate new noise for generator
-            noise_new = get_noise(batch_size, noise_dim, device)
+            noise_new = self._get_noise()
             # generate new fake images for generator step
-            fake_images_new = gen(noise_new)
+            fake_images_new = self.gen(noise_new)
             # calculating generator loss using discriminator output
-            generator_loss = calculate_generator_loss(discriminator, fake_images_new, criterion)
+            generator_loss = self._calculate_generator_loss(
+                self.disc, 
+                fake_images_new
+            )
             # calculate generator gradients using disc. retained graph and prev. loss calculation
             generator_loss.backward()
             # updating the parameters of generator
-            gen_opt.step()
-            
-            
-            
-            # for epoch losses
-            gen_loss += generator_loss.item()
-            disc_loss += discriminator_loss.item()   
-        
-        if (epoch%save_model_every==0) and (epoch>0):
-            save_model(gen, epoch, model_base_path, "generator")
-            save_model(discriminator, epoch, model_base_path, "discriminator")
+            self.gen_optimizer.step()
 
-        
-        dataloader_length = len(dataloader)
-        avg_disc_loss = disc_loss / dataloader_length
-        avg_gen_loss = gen_loss / dataloader_length
-        
-        disc_losses.append(avg_disc_loss)
-        gen_losses.append(avg_gen_loss)
-        
-        if (epoch%print_every==0):
-            
-            print(f"Epoch: {epoch} --> Generator loss: {avg_gen_loss}, Discriminator loss: {avg_disc_loss}")
-            if debug_print:
-                fake_noise = get_noise(batch_size, noise_dim, device=device)
-                fake = gen(fake_noise)
+            # Keep track of the average generator loss
+            _generator_loss += generator_loss.item()
+
+
+            if (self.train_cfg.show_and_save_by) and (cur_step % self.train_cfg.show_and_save_by == 0) and (cur_step > 0):
+                fake_noise = self._get_noise()
+                fake = self.gen(fake_noise)
                 show_tensor_images(fake)
-                show_tensor_images(real_images)
+                save_tensor_images(fake_images, f"./{self.model_cfg.results}/generated_{epoch}_{cur_step}.png")
             
-    
-    save_losses(gen_losses, "generator_losses.npy")
-    save_losses(disc_losses, "discriminator_losses.npy")
-    
-    save_model(gen, epoch, model_base_path, "generator")
-    save_model(discriminator, epoch, model_base_path, "discriminator")    
-            
+            cur_step += 1
         
+        _generator_loss /= dataset_length
+        _discriminator_loss /= dataset_length    
+        
+        return _generator_loss, _discriminator_loss
     
+    def train(self):
+        for epoch in range(self.train_cfg.epochs):
+            
+            # Dataloader returns the batches
+            _train_generator_loss, _train_discriminator_loss = self._train_step(epoch)
+            
+            print(f"Epoch {epoch}, Generator loss: {_train_generator_loss}, discriminator loss: {_train_discriminator_loss}")
+            
+            # SummaryWriter for losses
+            self.summary_logger.add_scalars(
+                main_tag="Losses",
+                tag_scalar_dict={
+                    "train/generator_loss": _train_generator_loss,
+                    "train/discriminator_loss": _train_discriminator_loss
+                },
+                global_step=epoch
+            )
+            
+    # Train.test_loader not used, model evaluation not performed in original paper... 
 
 
-if __name__ == "__main__":
-    # TODO: integrate with config or running parameters
-    train()
+def main(args):
+    # TODO: perform full training process and export result graphs to serve ad readme
+    cfg = Config(args.cfg)
+    
+    trainer = Train(cfg)
+    trainer.set_device()
+    trainer.load_dataset()
+    trainer.configure_data_loaders()
+    trainer.build_model()
+    trainer.configure_logging()
+    
+    trainer.train()
+    trainer.save_model(trainer.gen, "./models", "gan_model_gen")
+    trainer.save_model(trainer.disc, "./models", "gan_model_disc")
+
+if __name__ == "__main__":    
+    
+    parser = argparse.ArgumentParser(
+        prog='Basic GAN Train',
+        description='Basic GAN Training Process')
     
     
-""" if (epoch%print_every==0) and (epoch>0):    
-    avg_disc_loss = disc_loss / len(dataloader)
-    avg_gen_loss = gen_loss / len(dataloader)
-    print(f"Epoch {epoch}: Generator Loss: {avg_gen_loss}, Discriminator Loss: {avg_disc_loss}")
-"""
+    parser.add_argument("-c", "--cfg", default="./train.yml", required=False)
+    
+    args = parser.parse_args()
+    main(args)

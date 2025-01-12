@@ -7,22 +7,20 @@ data:
 train:
   device: "cuda"
   noise_dimension: 64
-  image_channel: 1
-  learning_rate: 0.001 
-  epochs: 10
-  batch_size: 16
+  learning_rate: 0.00001
+  epochs: 200
+  batch_size: 128
   # TODO: bug for not considering all batches, calculated only within current batch, value>step_size won't work, fix
-  show_and_save_by: False
+  show_and_save_by: 420 
 
 logging:
     directory: "experiments"
     sub_directory: "Experiment 1"
-    model_name: "DCGAN"
+    model_name: "GAN"
   
 model:
   results: "results"
   save_directory: "models"
-  name: "DCGAN_1"
-
+  name: "GAN_1"
 
 

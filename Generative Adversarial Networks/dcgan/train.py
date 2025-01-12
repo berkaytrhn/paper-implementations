@@ -156,7 +156,7 @@ class Train:
             # get batch size
             batch_size = real_images.shape[0]
 
-            #  reshape from (batch_size, channel, height, width) to (batch_size, channel*height*width)
+            # to device
             real_images = real_images.to(self.device)
             
             # Discriminator Part 
